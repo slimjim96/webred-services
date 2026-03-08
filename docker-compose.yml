@@ -67,8 +67,6 @@ services:
       - internal
 
   # ── Vikunja (task management) ────────────────────────────────────────────────
-  # All-in-one image: API + frontend on port 3456
-  # Docs: https://vikunja.io/docs/config-options/
 
   vikunja:
     image: vikunja/vikunja:latest
@@ -86,7 +84,7 @@ services:
       VIKUNJA_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       VIKUNJA_REDIS_ENABLED: "true"
       VIKUNJA_REDIS_HOST: redis:6379
-      VIKUNJA_SERVICE_PUBLICURL: https://${VIKUNJA_DOMAIN}
+      VIKUNJA_SERVICE_PUBLICURL: ${VIKUNJA_PUBLIC_URL}
       VIKUNJA_SERVICE_JWTSECRET: ${VIKUNJA_JWT_SECRET}
       VIKUNJA_MAILER_ENABLED: ${SMTP_ENABLED:-false}
       VIKUNJA_MAILER_HOST: ${SMTP_HOST:-}
@@ -96,13 +94,10 @@ services:
       VIKUNJA_MAILER_FROMEMAIL: ${SMTP_FROM:-}
     volumes:
       - vikunja_files:/app/vikunja/files
-    ports:
-      - "${VIKUNJA_PORT:-3456}:3456"
     networks:
       - internal
 
   # ── Outline (wiki / notes) ───────────────────────────────────────────────────
-  # Docs: https://docs.getoutline.com/s/hosting/doc/docker-7pfeLP5a8t
 
   outline:
     image: outlinewiki/outline:latest
@@ -119,11 +114,10 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/outline
       REDIS_URL: redis://redis:6379
-      URL: https://${OUTLINE_DOMAIN}
+      URL: ${OUTLINE_PUBLIC_URL}
       PORT: "3000"
       SECRET_KEY: ${OUTLINE_SECRET_KEY}
       UTILS_SECRET: ${OUTLINE_UTILS_SECRET}
-      # File storage via MinIO (S3-compatible)
       FILE_STORAGE: s3
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
@@ -132,11 +126,8 @@ services:
       AWS_S3_UPLOAD_BUCKET_NAME: outline
       AWS_S3_FORCE_PATH_STYLE: "true"
       AWS_S3_ACL: private
-      # HAProxy terminates SSL — no HTTPS enforcement inside the stack
       FORCE_HTTPS: "false"
       PGSSLMODE: disable
-      # Auth: configure at least one provider (OIDC shown; SMTP email below)
-      # OIDC (e.g. Authentik, Keycloak, Google):
       OIDC_CLIENT_ID: ${OUTLINE_OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OUTLINE_OIDC_CLIENT_SECRET:-}
       OIDC_AUTH_URI: ${OUTLINE_OIDC_AUTH_URI:-}
@@ -144,7 +135,6 @@ services:
       OIDC_USERINFO_URI: ${OUTLINE_OIDC_USERINFO_URI:-}
       OIDC_USERNAME_CLAIM: email
       OIDC_DISPLAY_NAME: ${OUTLINE_OIDC_DISPLAY_NAME:-SSO}
-      # SMTP (for email magic-link login)
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USER:-}
@@ -152,8 +142,24 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM:-}
       SMTP_REPLY_EMAIL: ${SMTP_FROM:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+    networks:
+      - internal
+
+  # ── Nginx front-door ──────────────────────────────────────────────────────────
+  # Routes by hostname on port 7878:
+  #   tasks.lan:7878  →  vikunja:3456
+  #   wiki.lan:7878   →  outline:3000
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
     ports:
-      - "${OUTLINE_PORT:-3000}:3000"
+      - "7878:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - vikunja
+      - outline
     networks:
       - internal
 
